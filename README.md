@@ -1,2 +1,4 @@
 # Petri-Evolution
 A sandbox game about cell evolution, natural selection and a little bit of luck.
+Play here:
+The game starts by the player spawning 10 random cells with a button. The 10 random cells have a random combination of traits, like Size, Sense and Speed. The Sense trait is the distance the cell can detect food from. The cells only search for food when they have less than 50% energy left. When the energy reaches 100%, the cell reproduses via mitosis. The offspring is similar to the parent cell. When reproducing, the cells can mutate, they can either change slightly or change so much, that a new species appears. Also, when reporducing, there is a chance that the offspring will be infected by a disease. The properties of the disease are randomised. Feel free to experiment with the cells by changing the enviroment they live in. 
