@@ -1,0 +1,1056 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Petri Evolution</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 20px;
+        }
+        #game-container {
+            display: flex;
+            background-color: #e0e0e0;
+            border-radius: 10px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        #analytics-wrapper {
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        #canvas-container {
+            border: 2px solid #ccc;
+            border-radius: 50%; /* Petri dish shape */
+            overflow: hidden;
+            position: relative;
+            background-color: #ffffff; /* Inside petri dish */
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.3), 0 0 0 5px #e0e0e0, 0 0 0 8px #ccc; /* Inner shadow, outer border, outer shadow */
+        }
+        canvas {
+            display: block;
+        }
+        #controls {
+            margin-left: 20px;
+            padding: 15px;
+            background-color: #f8f8f8;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            width: 200px;
+        }
+        .control-group {
+            margin-bottom: 15px;
+        }
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .control-group input[type="range"] {
+            width: 100%;
+        }
+        #graph-container {
+                width: 800px; /* Match canvas width */
+                height: 200px;
+                background-color: #f8f8f8;
+                border-radius: 8px;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                padding: 15px;
+                position: relative; /* Added for positioning death counters */
+            }
+
+            #death-counters {
+                display: flex;
+                flex-direction: column; /* Stack items vertically */
+                align-items: center; /* Center items horizontally */
+                justify-content: center; /* Center items vertically within its own space */
+                position: absolute;
+                left: 400px; /* Position after the graph canvas */
+                width: 400px; /* Take up the remaining space */
+                top: 0; /* Align to top of graph-container */
+                height: 100%; /* Take full height of graph-container */
+                padding-left: 15px; /* Adjust for graph-container padding */
+                box-sizing: border-box; /* Include padding in width/height */
+            }
+            .deaths-title {
+                font-weight: bold;
+                font-size: 1.3em;
+                color: #333;
+                margin-bottom: 10px;
+            }
+            .counter {
+                display: flex; /* Make each counter a flex item to align label and count */
+                gap: 5px; /* Space between label and count */
+                margin-bottom: 5px; /* Space between counters */
+            }
+            .counter .count {
+                font-weight: bold;
+                color: black;
+                font-size: 1.2em;
+            }
+
+
+            #species-analytics-container {
+                width: 250px; /* Adjust width as needed */
+                background-color: #1e1e1e;
+                border: 1px solid #333;
+                border-radius: 8px;
+                padding: 15px;
+                margin-left: 20px; /* Space between graph and species analytics */
+                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+                overflow-y: auto; /* Enable scrolling if many species */
+                max-height: 600px; /* Limit height */
+            }
+
+            #species-analytics-container h3 {
+                color: #e0e0e0;
+                text-align: center;
+                margin-bottom: 15px;
+                border-bottom: 1px solid #444;
+                padding-bottom: 10px;
+            }
+
+            #species-list {
+                display: flex;
+                flex-direction: column;
+                gap: 15px;
+            }
+
+            .species-window {
+                background-color: #2a2a2a;
+                border: 1px solid #444;
+                border-radius: 5px;
+                padding: 10px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            }
+
+            .species-color-example {
+                width: 30px;
+                height: 30px;
+                border-radius: 50%;
+                border: 2px solid #555;
+                flex-shrink: 0; /* Prevent shrinking */
+            }
+
+            .species-info {
+                color: #c0c0c0;
+                font-size: 0.9em;
+            }
+
+            .species-info p {
+                margin: 2px 0;
+            }
+
+            .trait-comment {
+                font-style: italic;
+                color: #888;
+                margin-left: 5px;
+            }
+            #tutorial-overlay {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0, 0, 0, 0.8);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                z-index: 1000; /* Ensure it's on top of everything */
+            }
+
+            #tutorial-content {
+                background-color: #fff;
+                padding: 30px;
+                border-radius: 10px;
+                box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+                text-align: center;
+                max-width: 600px;
+                color: #333;
+            }
+
+            #tutorial-content h2 {
+                color: #0056b3;
+                margin-bottom: 20px;
+            }
+
+            #tutorial-content ul {
+                list-style: none;
+                padding: 0;
+                margin: 20px 0;
+                text-align: left;
+            }
+
+            #tutorial-content li {
+                margin-bottom: 10px;
+                font-size: 1.1em;
+            }
+
+            #tutorial-content button {
+                background-color: #28a745;
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 5px;
+                font-size: 1.2em;
+                cursor: pointer;
+                transition: background-color 0.3s ease;
+            }
+
+            #tutorial-content button:hover {
+                background-color: #218838;
+            }
+        </style>
+</head>
+<body>
+    <div id="tutorial-overlay">
+        <div id="tutorial-content">
+            <h2>Welcome to Petri Evolution!</h2>
+            <p>Observe the fascinating world of evolving cells.</p>
+            <ul>
+                <li>Cells move, eat food, and reproduce.</li>
+                <li>They mutate over generations, developing new traits.</li>
+                <li>Watch out for diseases that can spread and impact populations!</li>
+                <li>Adjust parameters like Food Spawn Rate, Mutation Rate, and Disease Chance to influence evolution.</li>
+                <li>Track species analytics and overall experiment time.</li>
+            </ul>
+            <button id="play-button">Play</button>
+        </div>
+    </div>
+    <h1>Petri Evolution Simulation</h1>
+    <div id="game-container">
+        <div id="canvas-container">
+            <canvas id="petriCanvas" width="800" height="800"></canvas>
+        </div>
+        <div id="controls">
+            <h2>Controls</h2>
+            <div class="control-group">
+                <label for="foodSpawnRate">Food Spawn Rate: <span id="foodSpawnRateValue">100 food/s</span></label>
+                <input type="range" id="foodSpawnRate" min="1" max="200" value="100">
+            </div>
+            <div class="control-group">
+                <label for="mutationRate">Mutation Rate: <span id="mutationRateValue">10.0%</span></label>
+                <input type="range" id="mutationRate" min="0" max="100" value="10.0" step="0.1">
+            </div>
+            <div class="control-group">
+                <label for="diseaseChance">Disease Chance: <span id="diseaseChanceValue">1.0%</span></label>
+                <input type="range" id="diseaseChance" min="0" max="100" value="1.0" step="0.1">
+            </div>
+            <div class="control-group">
+                <button id="spawnCellsButton">Spawn 10 Random Cells</button>
+            </div>
+            <div class="control-group">
+                <button id="pausePlayButton">&#9616;&#9616;</button> <!-- Pause pictogram -->
+            </div>
+            <div class="control-group">
+                <label>Disease Status:</label>
+                <p id="diseaseStatus">No active disease</p>
+                <p id="deathChanceDisplay"></p>
+                <p id="immunityChanceDisplay"></p>
+            </div>
+        </div>
+    </div>
+    <div id="analytics-wrapper">
+        <div id="experiment-timer" style="text-align: center; font-size: 1.5em; font-weight: bold; margin-bottom: 10px;">
+            Experiment Time: 00:00:00
+        </div>
+        <div id="graph-container">
+            <canvas id="populationGraph" width="400" height="200"></canvas>
+            <div id="death-counters">
+                <div class="deaths-title">Deaths</div>
+                <div class="counter">
+                    <span class="label">Old Age:</span>
+                    <span class="count" id="deathsByOldAge">0</span>
+                </div>
+                <div class="counter">
+                    <span class="label">Starvation:</span>
+                    <span class="count" id="deathsByStarvation">0</span>
+                </div>
+                <div class="counter">
+                    <span class="label">Disease:</span>
+                    <span class="count" id="deathsByDisease">0</span>
+                </div>
+            </div>
+
+        </div>
+        <div id="species-analytics-container">
+            <h3>Species Analytics</h3>
+            <div id="species-list">
+                <!-- Species windows will be dynamically added here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // JavaScript will go here
+        const canvas = document.getElementById('petriCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let cells = [];
+        let food = [];
+        let foodSpawnRate = 100; // Default food spawn rate
+        let mutationRate = 0.1; // Default mutation rate (as a decimal for calculations)
+        let diseaseChance = 0.01; // Default disease chance (as a decimal for calculations)
+        const MAX_AGE = 3600; // Maximum age for a cell (simulation ticks, 60 seconds at 60 FPS)
+        const DISEASE_DURATION_FRAMES = 60 * 10; // 10 seconds at 60 FPS (approx)
+        const INFECTION_RADIUS = 50; // Radius within which disease can spread
+
+
+        let diseaseActive = false; // Flag to track if a disease is active
+        let paused = false; // New variable to control simulation pause state
+
+        let totalPopulationHistory = [];
+        let infectedPopulationHistory = [];
+        const MAX_GRAPH_POINTS = 100; // Max points on the graph
+        let lastGraphUpdateTime = 0;
+        const GRAPH_UPDATE_INTERVAL = 1000; // Update graph every 1 second
+
+        let deathsByOldAge = 0;
+        let deathsByStarvation = 0;
+        let deathsByDisease = 0;
+
+        let experimentStartTime; // Variable to store the start time of the experiment
+        let speciesFirstBirthTimes = {}; // Stores the earliest birth time for each species color
+        let simulationTimeOffset = 0; // Accumulates time when no cells are present
+        let lastCellPresenceCheckTime = Date.now(); // Last time we checked for cell presence
+        let isSimulationPausedByNoCells = false; // Flag to indicate if simulation is paused due to no cells
+        let lastActiveTime = Date.now(); // Tracks when the tab was last active
+
+        function spawnFood() {
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+            const petriRadius = canvas.width / 2; // Assuming square canvas, radius is half width
+
+            // Generate random angle and radius within the petri dish
+            const angle = Math.random() * Math.PI * 2;
+            const radius = Math.random() * (petriRadius - 5); // Subtract a small margin to avoid spawning exactly on the edge
+
+            const x = centerX + radius * Math.cos(angle);
+            const y = centerY + radius * Math.sin(angle);
+            food.push(new Food(x, y));
+        }
+
+        function spawnRandomCells(count) {
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+            const petriRadius = canvas.width / 2; // Assuming square canvas, radius is half width
+
+            for (let i = 0; i < count; i++) {
+                const hue = Math.round(Math.random() * 360 / 10) * 10;
+                const color = `hsl(${hue}, 70%, 50%)`;
+                const speed = 1 + Math.random() * 2; // 1 to 3
+                const senseRadius = 50 + Math.random() * 50; // 50 to 100
+                const size = 5 + Math.random() * 5; // 5 to 10
+
+                // Generate random angle and radius within the petri dish, considering cell size
+                const angle = Math.random() * Math.PI * 2;
+                // Max radius for the cell's center is petriRadius - cell's own size - a small buffer (e.g., 1 unit)
+                const radius = Math.random() * (petriRadius - size - 1); 
+
+                const x = centerX + radius * Math.cos(angle);
+                const y = centerY + radius * Math.sin(angle);
+                
+                cells.push(new Cell(x, y, color, speed, senseRadius, size, false, false, 100)); // Initial cells start with 100 energy
+            }
+        }
+
+        class Cell {
+            constructor(x, y, color, speed, senseRadius, size, isDiseased = false, isImmune = false, initialEnergy = 100) {
+                this.x = x;
+                this.y = y;
+                this.energy = initialEnergy; // Initial energy
+                this.color = color;
+                this.speed = speed;
+                this.senseRadius = senseRadius;
+                this.size = size;
+                this.age = 0;
+                this.targetX = y;
+                this.targetY = y;
+                this.isMoving = false;
+                this.lastMoveTime = Date.now();
+                this.moveDelay = Math.random() * 3000 + 1000; // 1 to 4 seconds
+                this.isDiseased = isDiseased;
+                this.isImmune = isImmune;
+                this.timeInfected = 0; // New property to track how long the cell has been infected
+                this.birthTime = Date.now(); // Record the birth time of the cell
+            }
+
+            draw(ctx) {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.strokeStyle = 'black';
+                ctx.stroke();
+                ctx.closePath();
+
+                if (this.isDiseased) {
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.size + 2, 0, Math.PI * 2);
+                    ctx.strokeStyle = 'purple';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                    ctx.closePath();
+                } else if (this.isImmune) {
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.size + 2, 0, Math.PI * 2);
+                    ctx.strokeStyle = 'blue';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                    ctx.closePath();
+                }
+            }
+
+            setNewTarget(canvasWidth, canvasHeight) {
+                this.targetX = Math.random() * canvasWidth;
+                this.targetY = Math.random() * canvasHeight;
+                this.isMoving = true;
+            }
+
+            move(canvasWidth, canvasHeight) {
+                if (this.energy <= 0) return; // Cannot move if no energy
+
+                const currentTime = Date.now();
+                let targetFound = false;
+
+                // Smart Feeding: If energy is below 50%, try to find food
+                if (this.energy < 50) {
+                    const sensedFood = this.senseFood(food); // 'food' is a global array
+                    if (sensedFood) {
+                        this.targetX = sensedFood.x;
+                        this.targetY = sensedFood.y;
+                        this.isMoving = true;
+                        targetFound = true;
+                    }
+                }
+
+                if (!targetFound && !this.isMoving && this.energy >= 50 && (currentTime - this.lastMoveTime < this.moveDelay)) {
+                    return; // Wait if not moving and energy is high
+                }
+
+                if (!targetFound && !this.isMoving && this.energy >= 50) {
+                    this.setNewTarget(canvasWidth, canvasHeight);
+                    this.lastMoveTime = currentTime;
+                } else if (!targetFound && this.energy < 50) {
+                    this.isMoving = true; // Move constantly if energy is low, even if no food found
+                }
+
+                const dx = this.targetX - this.x;
+                const dy = this.targetY - this.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                if (distance < 1) { // Reached target
+                    this.x = this.targetX;
+                    this.y = this.targetY;
+                    this.isMoving = false;
+                    this.lastMoveTime = currentTime;
+                    this.moveDelay = Math.random() * 3000 + 1000; // New random delay
+                    return;
+                }
+
+                const ratio = this.speed / distance;
+                this.x += dx * ratio;
+                this.y += dy * ratio;
+
+                // Keep cell within circular petri dish boundary
+                const centerX = canvasWidth / 2;
+                const centerY = canvasHeight / 2;
+                const petriRadius = canvasWidth / 2; // Assuming square canvas, radius is half width
+
+                const distFromCenter = Math.sqrt(
+                    (this.x - centerX) * (this.x - centerX) +
+                    (this.y - centerY) * (this.y - centerY)
+                );
+
+                if (distFromCenter + this.size > petriRadius) {
+                    // Calculate the vector from center to cell
+                    const angle = Math.atan2(this.y - centerY, this.x - centerX);
+                    // Set cell position to be just inside the boundary
+                    this.x = centerX + Math.cos(angle) * (petriRadius - this.size);
+                    this.y = centerY + Math.sin(angle) * (petriRadius - this.size);
+
+                    // Reset target to prevent it from trying to move outside again
+                    this.setNewTarget(canvasWidth, canvasHeight);
+                }
+
+                // Energy cost for moving
+                this.energy -= 0.05; // Small energy cost per move
+                if (this.energy < 0) this.energy = 0;
+            }
+
+            senseFood(foodArray) {
+                if (this.energy >= 50) return null; // Only sense food if hungry
+
+                this.energy -= 0.01; // Energy cost for sensing
+                if (this.energy < 0) this.energy = 0;
+
+                let closestFood = null;
+                let minDistance = Infinity;
+
+                for (const foodItem of foodArray) {
+                    const dx = foodItem.x - this.x;
+                    const dy = foodItem.y - this.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+
+                    if (distance < this.senseRadius && distance < minDistance) {
+                        minDistance = distance;
+                        closestFood = foodItem;
+                    }
+                }
+                return closestFood;
+            }
+
+            reproduce(mutationRate, diseaseChance, canvasWidth, canvasHeight) {
+                if (this.energy < 80) return null; // Only reproduce if energy is high enough
+
+                this.energy /= 2; // Parent splits energy
+                // New cell starts with 50% of max energy to prevent immediate re-reproduction
+                const newCellEnergy = 50;
+
+                // Mutate color (hue)
+                const parentHue = parseInt(this.color.match(/\d+/)[0]);
+                let newHue = parentHue; // Initialize newHue to parentHue
+                if (Math.random() < mutationRate) { // Check if mutation occurs for hue
+                    const randomMagnitude = (Math.random() - 0.5) * 20; // Random magnitude, e.g., up to +/- 10 degrees
+                    newHue = (parentHue + randomMagnitude);
+                    newHue = Math.round(newHue / 10) * 10; // Apply rounding only if mutation occurs
+                    if (newHue < 0) newHue += 360; // Ensure hue stays positive
+                    if (newHue >= 360) newHue -= 360; // Ensure hue stays within 0-359
+                }
+                const newColor = `hsl(${newHue}, 70%, 50%)`;
+
+                let newSpeed = this.speed;
+                if (Math.random() < mutationRate) { // Check if mutation occurs for speed
+                    const randomMagnitude = (Math.random() - 0.5) * 2; // Random magnitude, e.g., up to +/- 1 unit
+                    newSpeed = Math.max(1, this.speed + randomMagnitude);
+                }
+
+                let newSenseRadius = this.senseRadius;
+                if (Math.random() < mutationRate) { // Check if mutation occurs for sense radius
+                    const randomMagnitude = (Math.random() - 0.5) * 20; // Random magnitude, e.g., up to +/- 10 units
+                    newSenseRadius = Math.max(10, this.senseRadius + randomMagnitude);
+                }
+
+                let newSize = this.size;
+                if (Math.random() < mutationRate) { // Check if mutation occurs for size
+                    const randomMagnitude = (Math.random() - 0.5) * 2; // Random magnitude, e.g., up to +/- 1 unit
+                    newSize = Math.max(5, this.size + randomMagnitude);
+                }
+
+                let newIsDiseased = false;
+                let newIsImmune = false; // Offspring do not inherit immunity
+
+                // Disease can occur during reproduction, independent of other mutations
+                if (Math.random() < diseaseChance && !this.isImmune) {
+                    newIsDiseased = true;
+                }
+
+                const newCell = new Cell(
+                    this.x + (Math.random() - 0.5) * 10, // Slightly offset new cell position
+                    this.y + (Math.random() - 0.5) * 10,
+                    newColor,
+                    newSpeed,
+                    newSenseRadius,
+                    newSize,
+                    newIsDiseased,
+                    newIsImmune,
+                    newCellEnergy // Pass the initial energy for the new cell
+                );
+                return newCell;
+            }
+        }
+        class Food {
+            constructor(x, y, energyValue = 30) {
+                this.x = x;
+                this.y = y;
+                this.energyValue = energyValue;
+                this.size = 3; // Small size for food
+            }
+
+            draw(ctx) {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fillStyle = 'green'; // Food is green
+                ctx.fill();
+                ctx.closePath();
+            }
+        }
+
+        function randomizeDiseaseChances() {
+            currentDeathChance = (Math.floor(Math.random() * 100) + 1) / 100; // 1% to 100%
+            currentImmunityChance = 1 - currentDeathChance;
+            diseaseActive = true;
+            document.getElementById('diseaseStatus').textContent = 'Active Disease';
+            document.getElementById('deathChanceDisplay').textContent = `Death Chance: ${(currentDeathChance * 100).toFixed(0)}%`;
+            document.getElementById('immunityChanceDisplay').textContent = `Immunity Chance: ${(currentImmunityChance * 100).toFixed(0)}%`;
+        }
+
+        function getSpeciesAnalytics() {
+            const speciesData = {}; // To store aggregated data for each species
+
+            cells.forEach(cell => {
+                const color = cell.color;
+                if (!speciesData[color]) {
+                    speciesData[color] = {
+                        count: 0,
+                        totalSize: 0,
+                        totalSenseRadius: 0,
+                        totalSpeed: 0,
+                        exampleCell: cell // Keep a reference to one cell for its color
+                    };
+                }
+                // If this is the first time we're seeing this species color, record its birth time adjusted by simulationTimeOffset
+                if (!speciesFirstBirthTimes[color]) {
+                    speciesFirstBirthTimes[color] = cell.birthTime - simulationTimeOffset;
+                }
+                speciesData[color].count++;
+                speciesData[color].totalSize += cell.size;
+                speciesData[color].totalSenseRadius += cell.senseRadius;
+                speciesData[color].totalSpeed += cell.speed;
+            });
+
+            // Remove species from speciesFirstBirthTimes if they no longer exist in the current cell population
+            for (const color in speciesFirstBirthTimes) {
+                if (!speciesData[color]) {
+                    delete speciesFirstBirthTimes[color];
+                }
+            }
+
+            const analytics = [];
+            for (const color in speciesData) {
+                const data = speciesData[color];
+                analytics.push({
+                    color: color,
+                    averageSize: data.totalSize / data.count,
+                    averageSenseRadius: data.totalSenseRadius / data.count,
+                    averageSpeed: data.totalSpeed / data.count,
+                    count: data.count,
+                    birthTime: speciesFirstBirthTimes[color], // Use the globally stored birth time
+                    exampleCell: data.exampleCell
+                });
+            }
+            return analytics;
+        }
+
+        function getTraitComment(value, traitType) {
+            switch (traitType) {
+                case 'size':
+                    if (value < 6.5) return '<span class="trait-comment">(Small)</span>';
+                    if (value > 8.5) return '<span class="trait-comment">(Big)</span>';
+                    return '<span class="trait-comment">(Average)</span>';
+                case 'senseRadius':
+                    if (value < 65) return '<span class="trait-comment">(Weak)</span>';
+                    if (value > 85) return '<span class="trait-comment">(Strong)</span>';
+                    return '<span class="trait-comment">(Average)</span>';
+                case 'speed':
+                    if (value < 1.5) return '<span class="trait-comment">(Slow)</span>';
+                    if (value > 2.5) return '<span class="trait-comment">(Fast)</span>';
+                    return '<span class="trait-comment">(Average)</span>';
+                default:
+                    return '';
+            }
+        }
+
+        function formatTime(milliseconds) {
+            const totalSeconds = Math.floor(milliseconds / 1000);
+            const hours = Math.floor(totalSeconds / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const seconds = totalSeconds % 60;
+
+            const pad = (num) => num.toString().padStart(2, '0');
+            return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+        }
+
+        function drawSpeciesAnalytics() {
+            const speciesListDiv = document.getElementById('species-list');
+            speciesListDiv.innerHTML = ''; // Clear previous analytics
+
+            const speciesAnalytics = getSpeciesAnalytics();
+            speciesAnalytics.sort((a, b) => b.count - a.count);
+
+            speciesAnalytics.forEach(species => {
+                const speciesWindow = document.createElement('div');
+                speciesWindow.className = 'species-window';
+
+                const colorExample = document.createElement('div');
+                colorExample.className = 'species-color-example';
+                colorExample.style.backgroundColor = species.color;
+
+                const speciesInfo = document.createElement('div');
+                speciesInfo.className = 'species-info';
+                
+                const speciesAge = formatTime((Date.now() - simulationTimeOffset) - species.birthTime);
+
+                speciesInfo.innerHTML = `
+                    <p>Count: ${species.count}</p>
+                    <p>Age: ${speciesAge}</p>
+                    <p>Size: ${species.averageSize.toFixed(1)} ${getTraitComment(species.averageSize, 'size')}</p>
+                    <p>Sense: ${species.averageSenseRadius.toFixed(1)} ${getTraitComment(species.averageSenseRadius, 'senseRadius')}</p>
+                    <p>Speed: ${species.averageSpeed.toFixed(1)} ${getTraitComment(species.averageSpeed, 'speed')}</p>
+                `;
+
+                speciesWindow.appendChild(colorExample);
+                speciesWindow.appendChild(speciesInfo);
+                speciesListDiv.appendChild(speciesWindow);
+            });
+        }
+
+        function updateExperimentTimer() {
+            if (!experimentStartTime) return; // Do nothing if timer not started
+
+            const currentTime = Date.now();
+            let elapsedTime = currentTime - experimentStartTime - simulationTimeOffset; // Account for paused time
+
+            if (elapsedTime < 0) elapsedTime = 0; // Ensure elapsed time doesn't go negative
+
+            const hours = Math.floor(elapsedTime / (1000 * 60 * 60));
+            const minutes = Math.floor((elapsedTime % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((elapsedTime % (1000 * 60)) / 1000);
+
+            const formatTime = (num) => num.toString().padStart(2, '0');
+
+            document.getElementById('experiment-timer').textContent = 
+                `Experiment Time: ${formatTime(hours)}:${formatTime(minutes)}:${formatTime(seconds)}`;
+        }
+
+        function init() {
+            console.log("Simulation initialized.");
+            experimentStartTime = Date.now(); // Initialize experiment start time
+            // Initialize with some food
+            for (let i = 0; i < 20; i++) {
+                const x = Math.random() * canvas.width;
+                const y = Math.random() * canvas.height;
+                food.push(new Food(x, y));
+            }
+        }
+
+        function update() {
+            const currentTime = Date.now();
+
+            // Logic for pausing timer when no cells are present
+            if (cells.length === 0) {
+                if (!isSimulationPausedByNoCells) {
+                    isSimulationPausedByNoCells = true;
+                    lastCellPresenceCheckTime = currentTime;
+                } else {
+                    simulationTimeOffset += (currentTime - lastCellPresenceCheckTime);
+                    lastCellPresenceCheckTime = currentTime;
+                }
+            } else {
+                if (isSimulationPausedByNoCells) {
+                    simulationTimeOffset += (currentTime - lastCellPresenceCheckTime);
+                    isSimulationPausedByNoCells = false;
+                }
+                lastCellPresenceCheckTime = currentTime;
+            }
+
+            // Only proceed with simulation updates if there are cells or if it's not paused by no cells
+            if (cells.length === 0 && isSimulationPausedByNoCells) {
+                return; // Stop updating if no cells and timer is paused
+            }
+
+            // Update simulation state
+            for (let i = cells.length - 1; i >= 0; i--) {
+                const cell = cells[i];
+                cell.move(canvas.width, canvas.height);
+
+                // Age and energy decay
+                cell.age++;
+                let sizeEnergyDrain = cell.size * 0.005; // Larger cells consume more energy
+                let speedEnergyDrain = cell.speed * 0.01; // Faster cells consume more energy
+                cell.energy -= (0.02 + sizeEnergyDrain + speedEnergyDrain); // Constant + size + speed energy decay
+                if (cell.isDiseased) {
+                    cell.energy -= 0.05; // Faster energy decay for diseased cells
+                    cell.timeInfected++;
+
+                    if (cell.timeInfected >= DISEASE_DURATION_FRAMES) {
+                        if (Math.random() < currentDeathChance) { // Use randomized death chance
+                        deathsByDisease++; // Increment disease death counter
+                        cells.splice(i, 1); // Remove dead cell
+                        continue; // Move to the next cell
+                        } else { // Immunity chance is 1 - currentDeathChance
+                            cell.isDiseased = false;
+                            cell.isImmune = true;
+                            cell.energy = 50; // Recover some energy
+                            cell.timeInfected = 0; // Reset timer
+                        }
+                    }
+                }
+                if (cell.energy > 100) cell.energy = 100; // Cap energy
+
+                // Check for reproduction
+                if (cell.energy >= 80) {
+                    const newCell = cell.reproduce(mutationRate, diseaseChance, canvas.width, canvas.height);
+                    if (newCell) {
+                        cells.push(newCell);
+                    }
+                }
+
+                // Check for starvation, old age, or disease fatality
+                if (cell.energy <= 0 || cell.age > MAX_AGE || (cell.isDiseased && cell.energy < 20 && Math.random() < currentDeathChance)) {
+                    // Determine cause of death for counter
+                    if (cell.energy <= 0) {
+                        deathsByStarvation++;
+                    } else if (cell.age > MAX_AGE) {
+                        deathsByOldAge++;
+                    } else if (cell.isDiseased) {
+                        deathsByDisease++;
+                    }
+                    // Fatality for diseased cells with low energy
+                    if (cell.isDiseased && cell.energy < 20 && Math.random() >= currentDeathChance) {
+                        // Chance to survive and become immune
+                        cell.isDiseased = false;
+                        cell.isImmune = true;
+                        cell.energy = 50; // Recover some energy
+                    } else {
+                        cells.splice(i, 1); // Remove dead cell
+                    }
+                }
+            }
+
+            // Disease spread logic
+            for (let i = cells.length - 1; i >= 0; i--) {
+                const diseasedCell = cells[i];
+                if (diseasedCell.isDiseased) {
+                    for (let j = cells.length - 1; j >= 0; j--) {
+                        const healthyCell = cells[j];
+                        if (healthyCell !== diseasedCell && !healthyCell.isDiseased && !healthyCell.isImmune) {
+                            const dx = diseasedCell.x - healthyCell.x;
+                            const dy = diseasedCell.y - healthyCell.y;
+                            const distance = Math.sqrt(dx * dx + dy * dy);
+
+                            if (distance < INFECTION_RADIUS) {
+                                healthyCell.isDiseased = true;
+                                healthyCell.timeInfected = 0; // Start infection timer for the newly infected cell
+                                if (!diseaseActive) {
+                                    randomizeDiseaseChances();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Check if any cells are diseased to update diseaseActive flag and display
+            const anyDiseasedCells = cells.some(cell => cell.isDiseased);
+            if (!anyDiseasedCells && diseaseActive) {
+                diseaseActive = false;
+                document.getElementById('diseaseStatus').textContent = 'No active disease';
+                document.getElementById('deathChanceDisplay').textContent = '';
+                document.getElementById('immunityChanceDisplay').textContent = '';
+            }
+
+            // Handle cell eating food
+            for (let i = cells.length - 1; i >= 0; i--) {
+                const cell = cells[i];
+                for (let j = food.length - 1; j >= 0; j--) {
+                    const foodItem = food[j];
+                    const dx = cell.x - foodItem.x;
+                    const dy = cell.y - foodItem.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+
+                    if (distance < cell.size + foodItem.size) { // Collision detected
+                        cell.energy += foodItem.energyValue;
+                        if (cell.energy > 100) cell.energy = 100; // Cap energy
+                        food.splice(j, 1); // Remove eaten food
+                    }
+                }
+            }
+
+            // Spawn food
+            if (Math.random() * 100 < foodSpawnRate / 10) { // Adjust divisor for desired frequency
+                spawnFood();
+            }
+
+            // Update graph data
+            if (currentTime - lastGraphUpdateTime > GRAPH_UPDATE_INTERVAL) {
+                const totalPop = cells.length;
+                const infectedPop = cells.filter(cell => cell.isDiseased).length;
+
+                totalPopulationHistory.push(totalPop);
+                infectedPopulationHistory.push(infectedPop);
+
+                if (totalPopulationHistory.length > MAX_GRAPH_POINTS) {
+                    totalPopulationHistory.shift();
+                    infectedPopulationHistory.shift();
+                }
+                
+                drawGraph();
+                drawSpeciesAnalytics(); // Update species analytics
+                lastGraphUpdateTime = currentTime;
+
+                // Update death counters display
+                document.getElementById('deathsByOldAge').textContent = deathsByOldAge;
+                document.getElementById('deathsByStarvation').textContent = deathsByStarvation;
+                document.getElementById('deathsByDisease').textContent = deathsByDisease;
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw food
+            food.forEach(f => f.draw(ctx));
+
+            // Draw cells
+            cells.forEach(cell => cell.draw(ctx));
+        }
+
+        function gameLoop() {
+            if (!paused) {
+                update();
+                drawGraph(); // Call drawGraph here
+                updateExperimentTimer(); // Update the experiment timer
+            }
+            draw(); // Always draw to show current state even when paused
+            requestAnimationFrame(gameLoop);
+        }
+
+        const graphCanvas = document.getElementById('populationGraph');
+        const graphCtx = graphCanvas.getContext('2d');
+
+        function drawGraph() {
+            graphCtx.clearRect(0, 0, graphCanvas.width, graphCanvas.height);
+
+            // Draw border
+            graphCtx.strokeStyle = '#ccc';
+            graphCtx.strokeRect(0, 0, graphCanvas.width, graphCanvas.height);
+
+            if (totalPopulationHistory.length === 0) return;
+
+            const maxPop = Math.max(...totalPopulationHistory, ...infectedPopulationHistory);
+            const minPop = 0; // Population can't be negative
+
+            const xStep = graphCanvas.width / MAX_GRAPH_POINTS;
+            const yScale = graphCanvas.height / (maxPop - minPop);
+
+            // Draw Y-axis labels
+            graphCtx.fillStyle = 'black';
+            graphCtx.font = '10px Arial';
+            graphCtx.textAlign = 'right';
+            graphCtx.textBaseline = 'middle';
+
+            const numLabels = 5; // Number of labels to display
+            for (let i = 0; i <= numLabels; i++) {
+                const labelValue = Math.round(minPop + (maxPop - minPop) * (i / numLabels));
+                const y = graphCanvas.height - (labelValue - minPop) * yScale;
+                graphCtx.fillText(labelValue, graphCanvas.width - 5, y); // Draw label near the right edge
+
+                // Draw horizontal grid lines (optional)
+                graphCtx.beginPath();
+                graphCtx.strokeStyle = '#eee';
+                graphCtx.lineWidth = 1;
+                graphCtx.moveTo(0, y);
+                graphCtx.lineTo(graphCanvas.width, y);
+                graphCtx.stroke();
+            }
+
+            // Draw total population (gray line)
+            graphCtx.beginPath();
+            graphCtx.strokeStyle = 'gray';
+            graphCtx.lineWidth = 2;
+            totalPopulationHistory.forEach((pop, index) => {
+                const x = index * xStep;
+                const y = graphCanvas.height - (pop - minPop) * yScale;
+                if (index === 0) {
+                    graphCtx.moveTo(x, y);
+                } else {
+                    graphCtx.lineTo(x, y);
+                }
+            });
+            graphCtx.stroke();
+
+            // Draw infected population (purple line)
+            graphCtx.beginPath();
+            graphCtx.strokeStyle = 'purple';
+            graphCtx.lineWidth = 2;
+            infectedPopulationHistory.forEach((pop, index) => {
+                const x = index * xStep;
+                const y = graphCanvas.height - (pop - minPop) * yScale;
+                if (index === 0) {
+                    graphCtx.moveTo(x, y);
+                } else {
+                    graphCtx.lineTo(x, y);
+                }
+            });
+            graphCtx.stroke();
+        }
+
+        // UI Controls
+        const foodSpawnRateSlider = document.getElementById('foodSpawnRate');
+        const mutationRateSlider = document.getElementById('mutationRate');
+        const diseaseChanceSlider = document.getElementById('diseaseChance');
+
+        const foodSpawnRateValue = document.getElementById('foodSpawnRateValue');
+        const mutationRateValue = document.getElementById('mutationRateValue');
+        const diseaseChanceValue = document.getElementById('diseaseChanceValue');
+
+        foodSpawnRateSlider.addEventListener('input', (event) => {
+            foodSpawnRate = parseInt(event.target.value);
+            foodSpawnRateValue.textContent = `${foodSpawnRate} food/s`;
+        });
+
+        mutationRateSlider.addEventListener('input', (event) => {
+            mutationRate = parseFloat(event.target.value) / 100; // Convert percentage to decimal
+            mutationRateValue.textContent = `${parseFloat(event.target.value).toFixed(1)}%`;
+        });
+
+        diseaseChanceSlider.addEventListener('input', (event) => {
+            diseaseChance = parseFloat(event.target.value) / 100; // Convert percentage to decimal
+            diseaseChanceValue.textContent = `${parseFloat(event.target.value).toFixed(1)}%`; // Display with one decimal place
+        });
+
+        const spawnCellsButton = document.getElementById('spawnCellsButton');
+        spawnCellsButton.addEventListener('click', () => {
+            spawnRandomCells(10);
+        });
+
+        const pausePlayButton = document.getElementById('pausePlayButton');
+        pausePlayButton.addEventListener('click', () => {
+            paused = !paused;
+            if (paused) {
+                pausePlayButton.innerHTML = '&#9654;'; // Play pictogram
+            } else {
+                pausePlayButton.innerHTML = '&#9616;&#9616;'; // Pause pictogram
+            }
+        });
+
+        // Handle tab visibility to pause/resume timers
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                // Tab is hidden, record the time
+                lastActiveTime = Date.now();
+            } else {
+                // Tab is visible again, add the hidden time to simulationTimeOffset
+                simulationTimeOffset += (Date.now() - lastActiveTime);
+            }
+        });
+
+        // Tutorial and Game Start Logic
+        const tutorialOverlay = document.getElementById('tutorial-overlay');
+        const playButton = document.getElementById('play-button');
+
+        function startGame() {
+            tutorialOverlay.style.display = 'none'; // Hide the tutorial
+            init(); // Initialize the simulation
+            gameLoop(); // Start the game loop
+        }
+
+        playButton.addEventListener('click', startGame);
+    </script>
+</body>
+</html>
