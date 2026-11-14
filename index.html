@@ -647,7 +647,23 @@
                     CO₂: <span id="spawn-co2-display">500</span>
                 </div>
             </div>
-            
+
+            <div style="margin:20px 0;">
+                <label for="plate-count-slider" style="display:block; margin-bottom:10px; font-weight:bold;">
+                    Number of plates: <span id="plate-count-display">6</span>
+                </label>
+                <input type="range" id="plate-count-slider" min="1" max="10" step="1" value="6" style="width:100%;">
+                <div style="margin-top:10px; font-size:14px; color:#666;">The total land area stays the same, it is just divided into more plates.</div>
+            </div>
+
+            <div style="margin:20px 0;">
+                <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer; font-weight:bold;">
+                    <input type="checkbox" id="spawn-all-plates-checkbox" style="margin-top:3px;">
+                    <span>Spawn on all plates (ignores climate)</span>
+                </label>
+                <div style="margin-top:10px; font-size:14px; color:#666;">Commodities and cells are placed on every plate, also when you spawn more cells during the game.</div>
+            </div>
+
             <div style="display:flex; gap:10px;">
                 <button id="spawn-ok-button" style="flex:1; padding:10px; background:#4CAF50; color:white; border:none; border-radius:5px; cursor:pointer; font-weight:bold;">Start Simulation</button>
             </div>
@@ -903,6 +919,10 @@
                     'Total particles:': 'Častice spolu:',
                     'Food:': 'Potrava:',
                     '| Waste:': '| Odpad:',
+                    'Number of plates:': 'Počet dosiek:',
+                    'The total land area stays the same, it is just divided into more plates.': 'Celková rozloha súše ostane rovnaká, len sa rozdelí na viac dosiek.',
+                    'Spawn on all plates (ignores climate)': 'Spawn na všetkých doskách (bez ohľadu na podnebie)',
+                    'Commodities and cells are placed on every plate, also when you spawn more cells during the game.': 'Komodity a bunky sa umiestnia na každú dosku, aj keď ich počas hry spawnuješ viac.',
                     'Start Simulation': 'Spustiť simuláciu',
                     'MASS EXTINCTION': 'MASOVÉ VYMIERANIE',
                     '📖 History of Life': '📖 História života',
@@ -1138,6 +1158,7 @@
         const COMMODITY_AREA_PER_PARTICLE = 3600;  // plocha na jednu časticu pri štarte (jednotky², ~60x60)
         let commoditySpawnRadius = 760;            // polomer kruhu v strede, kam sa spawnujú komodity a nové bunky
         function randomPointInSpawnDisc() {
+            if (window.spawnOnAllPlates) { const ap = tectPlateSpawnPoint(-1); if (ap) return ap; } // na všetkých doskách
             const tp = tectSpawnPoint(); // na súši domovskej dosky
             if (tp) return tp;
             const c = WORLD_SIZE / 2;
@@ -1250,7 +1271,8 @@ const TECT_ARROW_SPACING = 6;          // šípka je z každého 6. políčka do
             for (let i = 0; i < GRID_CELLS; i++) if (occ[i] === -1) free.push(i);
             const seeds = [];
             let minDist = 24, tries = 0;
-            while (seeds.length < TECT_PLATE_COUNT && tries < 4000) {
+            const wantedPlates = window.customPlateCount || TECT_PLATE_COUNT;
+            while (seeds.length < wantedPlates && tries < 4000) {
                 tries++;
                 if (tries % 500 === 0) minDist -= 3;
                 const idx = free[Math.floor(Math.random() * free.length)];
@@ -1646,6 +1668,7 @@ const TECT_ARROW_SPACING = 6;          // šípka je z každého 6. políčka do
             tectEachObject(o => {
                 const gx = o.x / CELL, gy = o.y / CELL;
                 if (tectNearestLand(gx, gy, TECT_COAST_R) >= 0) return;
+                if (iceCount > 0 && iceNodeNear(gx, gy, ICE_CARRY_R) >= 0) return; // na ľadovci sa dá stáť
                 let j = tectNearestLand(gx, gy, 9);
                 if (j < 0) j = anyLand;
                 o.x += (t.cx[j] * CELL - o.x) * 0.6;
@@ -1698,6 +1721,54 @@ const TECT_ARROW_SPACING = 6;          // šípka je z každého 6. políčka do
             return { x: (t.cx[j] + (Math.random() - 0.5) * 0.9) * CELL, y: (t.cy[j] + (Math.random() - 0.5) * 0.9) * CELL };
         }
 
+        // Spawn na všetkých doskách (bez ohľadu na podnebie): každá doska má svoj štartovací kruh okolo uzla najbližšie k jej stredu.
+        // k = poradie dosky, alebo -1 = náhodná doska s váhou podľa rozlohy jej súše.
+        function tectPlateSpawnList() {
+            const t = tect;
+            if (!t) return [];
+            const amount = window.customSpawnAmount || 500;
+            const key = tectStepCount + ':' + amount;
+            if (t.plateSpawn && t.plateSpawn.key === key) return t.plateSpawn.plates;
+            const CELL = TEMP_CELL_SIZE, byPlate = new Map();
+            for (let i = 0; i < t.m; i++) {
+                if (t.h[i] < TECT_SEA_LEVEL) continue;
+                const q = t.plateOf[i];
+                if (!byPlate.has(q)) byPlate.set(q, []);
+                byPlate.get(q).push(i);
+            }
+            const plates = [];
+            let totalLand = 0;
+            byPlate.forEach(land => { totalLand += land.length; });
+            byPlate.forEach(land => {
+                // štartovací kruh dosky má tú istú hustotu častíc ako jediný kruh pri spawne na domovskej doske
+                const rg = Math.max(3, Math.sqrt(amount * (land.length / totalLand) * COMMODITY_AREA_PER_PARTICLE / Math.PI) / CELL);
+                let mx = 0, my = 0;
+                for (let i = 0; i < land.length; i++) { mx += t.cx[land[i]]; my += t.cy[land[i]]; }
+                mx /= land.length; my /= land.length;
+                let c = land[0], cd = Infinity;
+                for (let i = 0; i < land.length; i++) { const d = Math.hypot(t.cx[land[i]] - mx, t.cy[land[i]] - my); if (d < cd) { cd = d; c = land[i]; } }
+                const near = land.filter(i => Math.hypot(t.cx[i] - t.cx[c], t.cy[i] - t.cy[c]) <= rg);
+                plates.push({ nodes: near.length ? near : land, w: land.length });
+            });
+            t.plateSpawn = { key: key, plates: plates };
+            return plates;
+        }
+        function tectPlateSpawnPoint(k) {
+            const plates = tectPlateSpawnList();
+            if (!plates.length) return null;
+            let P;
+            if (k >= 0) P = plates[k % plates.length];
+            else {
+                let total = 0;
+                for (let i = 0; i < plates.length; i++) total += plates[i].w;
+                let r = Math.random() * total;
+                P = plates[plates.length - 1];
+                for (let i = 0; i < plates.length; i++) { r -= plates[i].w; if (r <= 0) { P = plates[i]; break; } }
+            }
+            const j = P.nodes[Math.floor(Math.random() * P.nodes.length)], CELL = TEMP_CELL_SIZE;
+            return { x: (tect.cx[j] + (Math.random() - 0.5) * 0.9) * CELL, y: (tect.cy[j] + (Math.random() - 0.5) * 0.9) * CELL };
+        }
+
         function initTectonics() {
             initTectField();
             usedPlateNames.clear();
@@ -1717,7 +1788,377 @@ const TECT_ARROW_SPACING = 6;          // šípka je z každého 6. políčka do
                 tectBuildCur(prog);
             }
             if (now - tectStepStart >= TECT_STEP_MS) tectonicStep(now);
+            updateIce(now);
             if (now - tectLastKeep >= 1000) { tectLastKeep = now; tectKeepOnLand(); }
+        }
+
+        // ===== ĽADOVCE =====
+        // Samostatný ľahký systém mäkkých telies (uzly + pružiny) ako dosky, ale krehkejšie: ľad sa láme pri stlačení
+        // (o pobrežie či o iný ľadovec) aj pri oteplení, a v teplej vode sa topí. Vzniká v studenom oceáne.
+        // Jednotky: políčka teplotnej mriežky (1 políčko = TEMP_CELL_SIZE svetových jednotiek).
+        const ICE_MAX_NODES = 700;            // najviac uzlov ľadu naraz
+        const ICE_FORM_INTERVAL = 10000;      // ako často (simulačný čas, ms) sa skúša vznik nových ľadovcov
+        const ICE_FORM_TRIES = 12;            // koľko náhodných políčok sa skúsi naraz
+        const ICE_START_TRIES = 300;          // koľko pokusov o vznik ľadu pri štarte hry (póly nezačínajú holé)
+        const ICE_EDGE_MARGIN = 2.5;          // ľad nevzniká bližšie k okraju misky (políčka)
+        const ICE_FORM_TEMP = 0;              // ľad vzniká v oceáne pod touto teplotou (°C)
+        const ICE_MELT_TEMP = 1;              // nad touto teplotou sa ľad topí (°C)
+        const ICE_MELT_RATE = 0.04;           // šanca zániku uzla za minútu na každý °C nad bodom topenia
+        const ICE_WEAK_TEMP = -5;             // nad touto teplotou ľad slabne a láme sa (°C)
+        const ICE_WEAK_RATE = 0.02;           // šanca prasknutia pružiny za minútu na každý °C nad ICE_WEAK_TEMP
+        const ICE_DRIFT = 1.0;                // násobok prúdenia pod doskami, ktorým ľad pláva
+        const ICE_STIFF = 0.5;                // tuhosť pružín (0 až 1)
+        const ICE_BREAK_STRETCH = 1.45;       // pružina natiahnutá na toľko násobkov dĺžky praskne
+        const ICE_BREAK_CRUSH = 0.55;         // pružina stlačená pod toľko násobkov dĺžky praskne
+        const ICE_LAND_R = 1.0;               // najmenšia vzdialenosť uzla ľadu od uzla súše (políčka)
+        const ICE_NODE_DIST = 0.85;           // najmenšia vzdialenosť uzlov rôznych ľadovcov (políčka)
+        const ICE_CARRY_R = 1.0;              // do tejto vzdialenosti od uzla ľadu sa objekty vozia na ľade (políčka)
+        const ICE_LINE_W = 1.0;               // hrúbka kreslenej väzby ľadového kryštálu (políčka)
+        const ICE_SEED_NODES = 7;             // kryštál začína ako šesťuholník: stred + 6 uzlov
+        const ICE_GROW_INTERVAL = 6000;       // ako často (simulačný čas, ms) kryštály rastú
+        const ICE_GROW_TRIES = 2;             // pokusy o pridanie uzla na ľadovec a rast
+        const ICE_MAX_BERG = 60;              // najviac uzlov jedného ľadovca (väčšie už nerastú)
+        const ICE_START_GROW = 120;           // koľko rastových krokov sa urobí pri štarte hry
+        const ICE_BOND = 1.25;                // uzly bližšie než toto sú spojené pružinou (políčka)
+        // Povrchové ľadovce na doskách: každý uzol dosky nesie hrúbku ľadu 0 až 1, ľad sa vozí s doskou
+        const ICE_LAND_INTERVAL = 2000;       // ako často (simulačný čas, ms) sa prepočíta ľad na súši
+        const ICE_LAND_FREEZE = -8;           // pod touto teplotou ľad na súši rastie (°C)
+        const ICE_LAND_SPREAD_TEMP = -2;      // pod touto teplotou sa ľad šíri zo susedných uzlov (°C)
+        const ICE_LAND_GROW = 0.5;            // rast hrúbky za minútu pri 10 °C pod bodom mrazu súše
+        const ICE_LAND_SPREAD = 0.3;          // rýchlosť šírenia z plne zaľadneného suseda (za minútu)
+        const ICE_LAND_MELT = 0.05;           // úbytok hrúbky za minútu na každý °C nad ICE_MELT_TEMP
+        const ICE_LAND_START_STEPS = 40;      // kroky (po 0,5 min) zaľadnenia súše pri štarte hry
+        const ICE_MIN_PIECE = 3;              // menší kúsok ľadu hneď zanikne
+        const iceX = new Float32Array(ICE_MAX_NODES), iceY = new Float32Array(ICE_MAX_NODES);
+        const iceVX = new Float32Array(ICE_MAX_NODES), iceVY = new Float32Array(ICE_MAX_NODES);
+        const icePX = new Float32Array(ICE_MAX_NODES), icePY = new Float32Array(ICE_MAX_NODES); // poloha spred kroku
+        const iceAng = new Float32Array(ICE_MAX_NODES);          // orientácia kryštálovej mriežky ľadovca (rad)
+        const iceID = new Int32Array(ICE_MAX_NODES).fill(-1);   // číslo ľadovca, -1 = voľné miesto
+        let iceHead = null;                   // mriežka polôh uzlov ľadu (vytvorí initIce, GRID_CELLS je definované neskôr)
+        const iceNext = new Int32Array(ICE_MAX_NODES);
+        let iceFree = [], iceCount = 0, iceSA = [], iceSB = [], iceSL = [], iceNextId = 1, iceLast = 0, iceLastForm = 0, iceLastGrow = 0, iceLastLand = 0, iceDirty = false;
+        const iceField = [0, 0];
+
+        function initIce() {
+            iceHead = new Int32Array(GRID_CELLS).fill(-1);
+            iceID.fill(-1); iceFree = [];
+            for (let i = ICE_MAX_NODES - 1; i >= 0; i--) iceFree.push(i);
+            iceCount = 0; iceSA = []; iceSB = []; iceSL = []; iceNextId = 1; iceDirty = false;
+            iceLast = globalSimulationTime; iceLastForm = globalSimulationTime;
+            iceLastGrow = globalSimulationTime; iceLastLand = globalSimulationTime;
+            if (tect) {
+                tect.ice = new Float32Array(tect.m);
+                iceTryForm(ICE_START_TRIES);
+                for (let g = 0; g < ICE_START_GROW; g++) iceGrow();
+                for (let k = 0; k < ICE_LAND_START_STEPS; k++) iceLandStep(0.5);
+            }
+        }
+        function iceCellOf(x, y) {
+            let gx = x | 0, gy = y | 0;
+            if (gx < 0) gx = 0; else if (gx > TEMP_GRID - 1) gx = TEMP_GRID - 1;
+            if (gy < 0) gy = 0; else if (gy > TEMP_GRID - 1) gy = TEMP_GRID - 1;
+            return gy * TEMP_GRID + gx;
+        }
+        function iceBuildHash() {
+            iceHead.fill(-1);
+            for (let i = 0; i < ICE_MAX_NODES; i++) {
+                if (iceID[i] < 0) continue;
+                const k = iceCellOf(iceX[i], iceY[i]);
+                iceNext[i] = iceHead[k]; iceHead[k] = i;
+            }
+        }
+        // Najbližší uzol ľadu do vzdialenosti r (políčka), alebo -1
+        function iceNodeNear(gx, gy, r) {
+            const N = TEMP_GRID, rb = Math.max(1, Math.ceil(r));
+            const bx = gx | 0, by = gy | 0;
+            let best = -1, bd = r * r;
+            for (let yy = by - rb; yy <= by + rb; yy++) {
+                if (yy < 0 || yy >= N) continue;
+                for (let xx = bx - rb; xx <= bx + rb; xx++) {
+                    if (xx < 0 || xx >= N) continue;
+                    for (let j = iceHead[yy * N + xx]; j !== -1; j = iceNext[j]) {
+                        const dx = iceX[j] - gx, dy = iceY[j] - gy, d2 = dx * dx + dy * dy;
+                        if (d2 < bd) { bd = d2; best = j; }
+                    }
+                }
+            }
+            return best;
+        }
+        function iceAddNode(x, y, id, ang) {
+            if (iceFree.length === 0) return -1;
+            const i = iceFree.pop();
+            iceX[i] = x; iceY[i] = y; iceVX[i] = 0; iceVY[i] = 0; iceID[i] = id; iceAng[i] = ang; iceCount++;
+            const k = iceCellOf(x, y);
+            iceNext[i] = iceHead[k]; iceHead[k] = i;
+            return i;
+        }
+        // Zárodok kryštálu: šesťuholník (stred a 6 uzlov po 60°) s náhodnou orientáciou
+        function iceAddSeed(cx, cy) {
+            if (iceFree.length < ICE_SEED_NODES) return;
+            icePurgeSprings();
+            const id = iceNextId++, ang = Math.random() * Math.PI / 3, list = [];
+            list.push(iceAddNode(cx, cy, id, ang));
+            for (let k = 0; k < 6; k++) list.push(iceAddNode(cx + Math.cos(ang + k * Math.PI / 3), cy + Math.sin(ang + k * Math.PI / 3), id, ang));
+            for (let a = 0; a < list.length; a++) for (let b = a + 1; b < list.length; b++) {
+                const d = Math.hypot(iceX[list[a]] - iceX[list[b]], iceY[list[a]] - iceY[list[b]]);
+                if (d < ICE_BOND) { iceSA.push(list[a]); iceSB.push(list[b]); iceSL.push(d); }
+            }
+        }
+        // Rast kryštálu: nový uzol vyrastie v jednom zo 6 smerov mriežky, najčastejšie z hrotov (dendrity)
+        function iceGrow() {
+            if (iceCount === 0) return;
+            icePurgeSprings();
+            iceBuildHash();
+            const N = TEMP_GRID, deg = new Uint8Array(ICE_MAX_NODES), byId = new Map();
+            for (let s = 0; s < iceSA.length; s++) { deg[iceSA[s]]++; deg[iceSB[s]]++; }
+            for (let i = 0; i < ICE_MAX_NODES; i++) {
+                if (iceID[i] < 0) continue;
+                if (!byId.has(iceID[i])) byId.set(iceID[i], []);
+                byId.get(iceID[i]).push(i);
+            }
+            byId.forEach((nodes, id) => {
+                for (let k = 0; k < ICE_GROW_TRIES; k++) {
+                    if (nodes.length >= ICE_MAX_BERG) return;
+                    let p = -1;
+                    for (let a = 0; a < 8 && p < 0; a++) {
+                        const q = nodes[Math.floor(Math.random() * nodes.length)];
+                        const w = 6.5 - Math.min(6, deg[q]);
+                        if (Math.random() * 42 < w * w) p = q;
+                    }
+                    if (p < 0) continue;
+                    const ang = iceAng[p] + Math.floor(Math.random() * 6) * Math.PI / 3;
+                    const x = iceX[p] + Math.cos(ang), y = iceY[p] + Math.sin(ang);
+                    const T = tempGrid[iceCellOf(x, y)];
+                    if (T >= ICE_FORM_TEMP) continue;
+                    if (Math.random() > Math.min(1, (ICE_FORM_TEMP - T) / 12)) continue;
+                    if (Math.hypot(x - N / 2, y - N / 2) > N / 2 - ICE_EDGE_MARGIN) continue;
+                    if (tectNearestLand(x, y, ICE_LAND_R + 0.3) >= 0) continue;
+                    if (iceNodeNear(x, y, 0.8) >= 0) continue;
+                    const n = iceAddNode(x, y, id, iceAng[p]);
+                    if (n < 0) return;
+                    nodes.push(n);
+                    const bx = x | 0, by = y | 0;
+                    for (let yy = Math.max(0, by - 1); yy <= Math.min(N - 1, by + 1); yy++) {
+                        for (let xx = Math.max(0, bx - 1); xx <= Math.min(N - 1, bx + 1); xx++) {
+                            for (let j = iceHead[yy * N + xx]; j !== -1; j = iceNext[j]) {
+                                if (j === n || iceID[j] !== id) continue;
+                                const d = Math.hypot(iceX[j] - x, iceY[j] - y);
+                                if (d < ICE_BOND) { iceSA.push(n); iceSB.push(j); iceSL.push(d); deg[n]++; deg[j]++; }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        // Povrchový ľad na doskách: rastie v chlade, šíri sa po susedných uzloch dosky, v teple sa topí
+        function iceLandStep(dt) {
+            const t = tect;
+            if (!t || !t.ice) return;
+            const ice = t.ice, sea = TECT_SEA_LEVEL;
+            const Tn = i => tempGrid[iceCellOf(t.cx[i], t.cy[i])];
+            for (let s = 0; s < t.sa.length; s++) {
+                const a = t.sa[s], b = t.sb[s];
+                if (t.h[a] < sea || t.h[b] < sea) continue;
+                if (ice[a] > 0.3 && ice[b] < ice[a] && Tn(b) < ICE_LAND_SPREAD_TEMP) ice[b] = Math.min(1, ice[b] + ICE_LAND_SPREAD * dt * ice[a]);
+                else if (ice[b] > 0.3 && ice[a] < ice[b] && Tn(a) < ICE_LAND_SPREAD_TEMP) ice[a] = Math.min(1, ice[a] + ICE_LAND_SPREAD * dt * ice[b]);
+            }
+            for (let i = 0; i < t.m; i++) {
+                if (t.h[i] < sea) { ice[i] = 0; continue; }
+                const T = Tn(i);
+                if (T < ICE_LAND_FREEZE) ice[i] = Math.min(1, ice[i] + ICE_LAND_GROW * dt * (ICE_LAND_FREEZE - T) / 10);
+                else if (T > ICE_MELT_TEMP && ice[i] > 0) ice[i] = Math.max(0, ice[i] - ICE_LAND_MELT * dt * (T - ICE_MELT_TEMP));
+            }
+        }
+        function iceRemoveNode(i) {
+            if (iceID[i] < 0) return;
+            iceID[i] = -1; iceFree.push(i); iceCount--; iceDirty = true;
+        }
+        // Po prasknutí či zaniknutí uzlov: zisti súvislé kusy, malé kúsky zrušiť, ostatným dať nové čísla
+        function iceRelabel() {
+            const par = new Int32Array(ICE_MAX_NODES);
+            for (let i = 0; i < ICE_MAX_NODES; i++) par[i] = i;
+            const find = a => { while (par[a] !== a) { par[a] = par[par[a]]; a = par[a]; } return a; };
+            const sa = [], sb = [], sl = [];
+            for (let s = 0; s < iceSA.length; s++) {
+                const a = iceSA[s], b = iceSB[s];
+                if (iceID[a] < 0 || iceID[b] < 0) continue;
+                sa.push(a); sb.push(b); sl.push(iceSL[s]);
+                par[find(a)] = find(b);
+            }
+            iceSA = sa; iceSB = sb; iceSL = sl;
+            const size = new Map();
+            for (let i = 0; i < ICE_MAX_NODES; i++) if (iceID[i] >= 0) { const r = find(i); size.set(r, (size.get(r) || 0) + 1); }
+            const ids = new Map();
+            for (let i = 0; i < ICE_MAX_NODES; i++) {
+                if (iceID[i] < 0) continue;
+                const r = find(i);
+                if (size.get(r) < ICE_MIN_PIECE) { iceRemoveNode(i); continue; }
+                if (!ids.has(r)) ids.set(r, iceNextId++);
+                iceID[i] = ids.get(r);
+            }
+            icePurgeSprings();
+            iceDirty = false;
+        }
+        // Pružiny, ktorých uzol zanikol, sa zahodia (uvoľnené miesto sa môže znova použiť pre iný uzol)
+        function icePurgeSprings() {
+            const sa = [], sb = [], sl = [];
+            for (let s = 0; s < iceSA.length; s++) {
+                if (iceID[iceSA[s]] < 0 || iceID[iceSB[s]] < 0) continue;
+                sa.push(iceSA[s]); sb.push(iceSB[s]); sl.push(iceSL[s]);
+            }
+            iceSA = sa; iceSB = sb; iceSL = sl;
+        }
+
+        // Skúsi vytvoriť nové ľadovce na náhodných políčkach studeného oceánu
+        function iceTryForm(tries) {
+            const N = TEMP_GRID;
+            iceBuildHash();
+            for (let k = 0; k < tries; k++) {
+                const idx = tempActiveList[Math.floor(Math.random() * tempActiveList.length)];
+                const gx = idx % N, gy = (idx - gx) / N;
+                const T = tempGrid[idx];
+                if (T >= ICE_FORM_TEMP) continue;
+                if (Math.random() > Math.min(1, (ICE_FORM_TEMP - T) / 20)) continue;
+                const cx = gx + 0.5, cy = gy + 0.5;
+                if (Math.hypot(cx - N / 2, cy - N / 2) > N / 2 - ICE_EDGE_MARGIN) continue;   // nie pri okraji misky
+                if (tectNearestLand(cx, cy, 3) >= 0) continue;                                // nie na súši ani pri nej
+                if (iceNodeNear(cx, cy, 3) >= 0) continue;                                    // nie cez iný ľadovec
+                iceAddSeed(cx, cy);
+                iceBuildHash();
+            }
+        }
+
+        function updateIce(now) {
+            if (!tect) return;
+            let dt = (now - iceLast) / 60000;      // minúty simulačného času
+            if (dt <= 0) return;
+            if (dt > 0.1) dt = 0.1;
+            iceLast = now;
+            const N = TEMP_GRID, CELL = TEMP_CELL_SIZE, tMin = now / 60000;
+            // vznik nových ľadovcov v studenom oceáne
+            if (now - iceLastForm >= ICE_FORM_INTERVAL) { iceLastForm = now; iceTryForm(ICE_FORM_TRIES); }
+            if (now - iceLastGrow >= ICE_GROW_INTERVAL) { iceLastGrow = now; iceGrow(); }
+            if (now - iceLastLand >= ICE_LAND_INTERVAL) { iceLandStep((now - iceLastLand) / 60000); iceLastLand = now; }
+            if (iceCount === 0) return;
+            // plávanie s prúdením, zapamätanie polôh pre vozenie objektov
+            const f = iceField, drive = Math.min(1, TECT_DRIVE * dt);
+            for (let i = 0; i < ICE_MAX_NODES; i++) {
+                if (iceID[i] < 0) continue;
+                icePX[i] = iceX[i]; icePY[i] = iceY[i];
+                tectFieldAt(iceX[i], iceY[i], tMin, f);
+                iceVX[i] += (f[0] * ICE_DRIFT - iceVX[i]) * drive;
+                iceVY[i] += (f[1] * ICE_DRIFT - iceVY[i]) * drive;
+                iceX[i] += iceVX[i] * dt; iceY[i] += iceVY[i] * dt;
+            }
+            iceBuildHash();
+            // dotyk so súšou a s inými ľadovcami
+            for (let i = 0; i < ICE_MAX_NODES; i++) {
+                if (iceID[i] < 0) continue;
+                const j = tectNearestLand(iceX[i], iceY[i], ICE_LAND_R);
+                if (j >= 0) {
+                    let dx = iceX[i] - tect.cx[j], dy = iceY[i] - tect.cy[j];
+                    const d = Math.sqrt(dx * dx + dy * dy) || 0.001;
+                    iceX[i] += dx / d * (ICE_LAND_R - d); iceY[i] += dy / d * (ICE_LAND_R - d);
+                    iceVX[i] *= 0.5; iceVY[i] *= 0.5;
+                }
+                const bx = iceX[i] | 0, by = iceY[i] | 0;
+                for (let yy = Math.max(0, by - 1); yy <= Math.min(N - 1, by + 1); yy++) {
+                    for (let xx = Math.max(0, bx - 1); xx <= Math.min(N - 1, bx + 1); xx++) {
+                        for (let o = iceHead[yy * N + xx]; o !== -1; o = iceNext[o]) {
+                            if (o <= i || iceID[o] === iceID[i]) continue;
+                            let dx = iceX[o] - iceX[i], dy = iceY[o] - iceY[i];
+                            const d = Math.sqrt(dx * dx + dy * dy) || 0.001;
+                            if (d >= ICE_NODE_DIST) continue;
+                            const push = (ICE_NODE_DIST - d) * 0.5;
+                            iceX[i] -= dx / d * push; iceY[i] -= dy / d * push;
+                            iceX[o] += dx / d * push; iceY[o] += dy / d * push;
+                        }
+                    }
+                }
+                // hranica misky
+                const rx = iceX[i] - N / 2, ry = iceY[i] - N / 2, rr = Math.sqrt(rx * rx + ry * ry), lim = N / 2 - 1.5;
+                if (rr > lim) { iceX[i] = N / 2 + rx / rr * lim; iceY[i] = N / 2 + ry / rr * lim; }
+            }
+            // pružiny: držia kus pokope, pri veľkom natiahnutí či stlačení (alebo v teple) praskajú
+            let broke = false;
+            for (let it = 0; it < 2; it++) {
+                for (let s = 0; s < iceSA.length; s++) {
+                    const a = iceSA[s], b = iceSB[s];
+                    if (iceID[a] < 0 || iceID[b] < 0) continue;
+                    const dx = iceX[b] - iceX[a], dy = iceY[b] - iceY[a];
+                    const d = Math.sqrt(dx * dx + dy * dy) || 0.001, l0 = iceSL[s];
+                    if (d > l0 * ICE_BREAK_STRETCH || d < l0 * ICE_BREAK_CRUSH) { iceSL[s] = -1; broke = true; continue; }
+                    const corr = (d - l0) / d * 0.5 * ICE_STIFF;
+                    iceX[a] += dx * corr; iceY[a] += dy * corr; iceX[b] -= dx * corr; iceY[b] -= dy * corr;
+                }
+            }
+            for (let s = 0; s < iceSA.length; s++) {
+                if (iceSL[s] < 0) continue;
+                const T = tempGrid[iceCellOf(iceX[iceSA[s]], iceY[iceSA[s]])];
+                if (T > ICE_WEAK_TEMP && Math.random() < ICE_WEAK_RATE * (T - ICE_WEAK_TEMP) * dt) { iceSL[s] = -1; broke = true; }
+            }
+            if (broke) {
+                const sa = [], sb = [], sl = [];
+                for (let s = 0; s < iceSA.length; s++) if (iceSL[s] >= 0) { sa.push(iceSA[s]); sb.push(iceSB[s]); sl.push(iceSL[s]); }
+                iceSA = sa; iceSB = sb; iceSL = sl;
+                iceDirty = true;
+            }
+            // topenie: uzly v teplej vode zanikajú
+            for (let i = 0; i < ICE_MAX_NODES; i++) {
+                if (iceID[i] < 0) continue;
+                const T = tempGrid[iceCellOf(iceX[i], iceY[i])];
+                if (T > ICE_MELT_TEMP && Math.random() < ICE_MELT_RATE * (T - ICE_MELT_TEMP) * dt) iceRemoveNode(i);
+            }
+            if (iceDirty) iceRelabel();
+            // objekty na ľade sa vozia s najbližším uzlom
+            if (iceCount > 0) {
+                iceBuildHash();
+                tectEachObject(o => {
+                    const gx = o.x / CELL, gy = o.y / CELL;
+                    const j = iceNodeNear(gx, gy, ICE_CARRY_R);
+                    if (j < 0 || tectNearestLand(gx, gy, TECT_COAST_R) >= 0) return;
+                    o.x += (iceX[j] - icePX[j]) * CELL; o.y += (iceY[j] - icePY[j]) * CELL;
+                });
+            }
+        }
+
+        function drawIce(c) {
+            const CELL = TEMP_CELL_SIZE;
+            c.save();
+            // povrchový ľad na doskách (3 stupne hrúbky)
+            const t = tect;
+            if (t && t.ice) {
+                const r = TECT_NODE_DRAW_R * 1.05 * CELL;
+                const levels = [[0.12, 0.45, 'rgba(238, 248, 255, 0.45)'], [0.45, 0.75, 'rgba(238, 248, 255, 0.7)'], [0.75, 2, 'rgba(244, 250, 255, 0.92)']];
+                for (let l = 0; l < levels.length; l++) {
+                    c.beginPath();
+                    let any = false;
+                    for (let i = 0; i < t.m; i++) {
+                        const v = t.ice[i];
+                        if (v < levels[l][0] || v >= levels[l][1] || t.h[i] < TECT_SEA_LEVEL) continue;
+                        const x = t.cx[i] * CELL, y = t.cy[i] * CELL;
+                        c.moveTo(x + r, y); c.arc(x, y, r, 0, Math.PI * 2);
+                        any = true;
+                    }
+                    if (any) { c.fillStyle = levels[l][2]; c.fill(); }
+                }
+            }
+            // plávajúce ľadovce: kryštál z väzieb medzi uzlami
+            if (iceCount > 0) {
+                c.lineCap = 'round'; c.lineJoin = 'round';
+                for (let pass = 0; pass < 2; pass++) {
+                    c.beginPath();
+                    for (let s = 0; s < iceSA.length; s++) {
+                        const a = iceSA[s], b = iceSB[s];
+                        if (iceID[a] < 0 || iceID[b] < 0) continue;
+                        c.moveTo(iceX[a] * CELL, iceY[a] * CELL); c.lineTo(iceX[b] * CELL, iceY[b] * CELL);
+                    }
+                    c.lineWidth = (pass === 0 ? ICE_LINE_W + 0.3 : ICE_LINE_W) * CELL;
+                    c.strokeStyle = pass === 0 ? 'rgba(150, 195, 225, 0.85)' : 'rgba(232, 246, 255, 0.96)';
+                    c.stroke();
+                }
+            }
+            c.restore();
         }
 
         // ===== ŠTIEPENIE A ZLUČOVANIE DOSIEK, NÁZVY, POHĽAD NA TEKTONIKU =====
@@ -3375,6 +3816,8 @@ const TECT_ARROW_SPACING = 6;          // šípka je z každého 6. políčka do
             const centerY = WORLD_SIZE / 2;
             const petriRadius = WORLD_SIZE / 2;
 
+            let plateSlots = 0;   // pri spawne na všetkých doskách dostane každá doska aspoň jedno zviera a jednu rastlinu
+            if (window.spawnOnAllPlates) { plateSlots = tectPlateSpawnList().length; count = Math.max(count, plateSlots * 2); }
             const animalsToSpawn = Math.floor(count / 2);
             const plantsToSpawn = count - animalsToSpawn;
             for (let i = 0; i < animalsToSpawn; i++) {
@@ -3385,7 +3828,7 @@ const TECT_ARROW_SPACING = 6;          // šípka je z každého 6. políčka do
                 const size = 5 + Math.random() * 5; // 5 to 10
 
 
-                const spawnPt = randomPointInSpawnDisc();
+                const spawnPt = (i < plateSlots && tectPlateSpawnPoint(i)) || randomPointInSpawnDisc();
                 const x = spawnPt.x;
                 const y = spawnPt.y;
                 
@@ -3398,7 +3841,7 @@ const TECT_ARROW_SPACING = 6;          // šípka je z každého 6. políčka do
                 const color = `hsl(${hue}, 70%, 40%)`;
                 const size = 5 + Math.random() * 5;
                 const rootRange = 120 + Math.random() * 60;
-                const spawnPt = randomPointInSpawnDisc();
+                const spawnPt = (i < plateSlots && tectPlateSpawnPoint(i)) || randomPointInSpawnDisc();
                 const x = spawnPt.x;
                 const y = spawnPt.y;
                 const plant = new PlantCell(x, y, color, 0, 0, size, rootRange, false, false, 100, 1.0);
@@ -4652,6 +5095,7 @@ const TECT_ARROW_SPACING = 6;          // šípka je z každého 6. políčka do
             resetSeeds();
             resetEras();
             initTectonics();
+            initIce();
             resetMycorrhiza();
             
             // Reset death counters
@@ -5366,6 +5810,7 @@ const TECT_ARROW_SPACING = 6;          // šípka je z každého 6. políčka do
             ctx.stroke();
 
             drawTerrain(ctx);
+            drawIce(ctx);
             drawHeatMap(ctx);
             drawCraters(ctx);
 
@@ -6021,11 +6466,18 @@ const TECT_ARROW_SPACING = 6;          // šípka je z každého 6. políčka do
             spawnCO2Display.textContent = amount;
         });
 
+        const plateCountSlider = document.getElementById('plate-count-slider');
+        const plateCountDisplay = document.getElementById('plate-count-display');
+        const spawnAllPlatesCheckbox = document.getElementById('spawn-all-plates-checkbox');
+        plateCountSlider.addEventListener('input', () => { plateCountDisplay.textContent = plateCountSlider.value; });
+
         // OK button - spustí simuláciu s custom hodnotami
         spawnOkButton.addEventListener('click', () => {
             const amount = parseInt(spawnAmountSlider.value);
             // Ulož hodnoty do globálnych premenných
             window.customSpawnAmount = amount;
+            window.customPlateCount = parseInt(plateCountSlider.value);
+            window.spawnOnAllPlates = spawnAllPlatesCheckbox.checked;
             spawnSettingsModal.style.display = 'none';
             startGame();
         });
